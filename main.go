@@ -10,24 +10,6 @@ import (
 	"strings"
 )
 
-/*
-[
-    {
-        "Node": "Prometheus.local",
-        "CheckID": "serfHealth",
-        "Name": "Serf Health Status",
-        "Status": "passing",
-        "Notes": "",
-        "Output": "Agent alive and reachable",
-        "ServiceID": "",
-        "ServiceName": "",
-        "ServiceTags": [],
-        "CreateIndex": 5,
-        "ModifyIndex": 5
-    }
-]
-*/
-
 type HealthCheck struct {
 	Node        string   `json:"Node"`
 	CheckID     string   `json:"CheckID"`
@@ -110,49 +92,81 @@ func main() {
 		os.Exit(2)
 	}
 
-	var found = false
-
 	for _, check := range Checks {
-		if check.ServiceID == service {
-			found = true
-		}
-	}
-
-	if !found {
-		fmt.Println(fmt.Sprintf("WARNING - No checks for service '%s' found!", service))
-		os.Exit(1)
-	}
-
-	for _, check := range Checks {
-		if check.Status == "critical" {
+		if check.Status == "critical" && check.ServiceID == service {
 			Critical = append(Critical, check)
-		} else if check.Status == "warning" {
+		} else if check.Status == "warning" && check.ServiceID == service {
 			Warning = append(Warning, check)
-		} else if check.Status == "passing" {
+		} else if check.Status == "passing" && check.ServiceID == service {
 			Passing = append(Passing, check)
 		}
 	}
 
-	var code = 0
-	var text = "texting"
+	if len(Critical) == 0 && len(Warning) == 0 && len(Passing) == 0 {
+		fmt.Println(fmt.Sprintf("WARNING - No checks for service '%s' found!", service))
+		os.Exit(1)
+	}
+
+	var code = 3
+	var text = "UNKNOWN"
 	var messages []string
+	var outputs []string
+	var notes []string
 
 	if len(Critical) > 0 {
 		code = 2
 		for _, check := range Critical {
-			messages = append(messages, fmt.Sprintf("%s:%s", check.Name, check.Output))
-			text = "CRITICAL - " + strings.Join(messages, "|")
+			text = "CRITICAL - "
+			messages = append(messages, check.Name)
+			if check.Output != "" {
+				outputs = append(outputs, check.Output)
+			}
+			if check.Notes != "" {
+				notes = append(notes, check.Notes)
+			}
 		}
 	} else if len(Warning) > 0 {
 		code = 1
-		for _, check := range Critical {
-			messages = append(messages, fmt.Sprintf("%s:%s", check.Name, check.Output))
-			text = "WARNING - " + strings.Join(messages, "|")
+		for _, check := range Warning {
+			text = "WARNING - "
+			messages = append(messages, check.Name)
+			if check.Output != "" {
+				outputs = append(outputs, check.Output)
+			}
+			if check.Notes != "" {
+				notes = append(notes, check.Notes)
+			}
 		}
 	} else if len(Passing) > 0 {
-		for _, check := range Critical {
-			messages = append(messages, fmt.Sprintf("%s:%s", check.Name, check.Output))
-			text = "OK - " + strings.Join(messages, "|")
+		code = 0
+		for _, check := range Passing {
+			text = "OK - "
+			messages = append(messages, check.Name)
+			if check.Output != "" {
+				outputs = append(outputs, check.Output)
+			}
+			if check.Notes != "" {
+				notes = append(notes, check.Notes)
+			}
+		}
+	} else {
+		code = 3
+		text = "UNKNOWN - No Critical, Warning or Passing Checks Found - This should not happen."
+	}
+
+	text += "Checks: " + strings.Join(messages, ", ")
+
+	if len(outputs) > 0 {
+		text += "\nOutputs: "
+		for _, out := range outputs {
+			text += "\n  " + out
+		}
+	}
+
+	if len(notes) > 0 {
+		text += "\nNotes:"
+		for _, out := range notes {
+			text += "\n  " + out
 		}
 	}
 
